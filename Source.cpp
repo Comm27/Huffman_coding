@@ -52,6 +52,8 @@ int MinHeapify(MinHeap *heap, int index);
 
 int BuildMinHeap(MinHeap *heap);
 
+MinHeap* CreateAndBuildHeap(unsigned int *freqArr, int size);
+
 Position GetMin(MinHeap *heap);
 
 // Removes min node from root then sorts again
@@ -76,49 +78,46 @@ int usedChars(unsigned int *freqArr);
 
 //****************************** END ******************************
 
+// Returns root node
 Position BuildHuffmanTree(MinHeap *heap);
-int ReadHuffmanCode(Position root, int codes[], int treeLevel);
 
+int PrintHuffmanCode(Position root, int codes[], int treeLevel);
 
-int main(int numOfArgs, char **args) 
+int ReadHuffmanCodeIntoArray(Position node, int codes[], int treeLevel, char *codesArr[]);
+
+int EncodeToFile(const char *filename, const char *compressedFilename, Position huffmanTree, unsigned int * freq, char *stringCodes[], unsigned int levelSize);
+int DecodeToFile(const char *filename, const char *compressedFilename);
+
+char IsLetter(Position node, int codes[], int currentLen);
+
+int main(int numOfArgs, char **args)
 {
 	const char *fileName = "test.txt";
 
 	// Ovaj niz ce raditi na principu da provjerava sva slova iz ASCII tablice i svaki
 	// put kada postoji to slovo mu povecaje vrijednost za 1
-	unsigned int *frequency;
+	unsigned int frequency[BYTES];
+	char *stringCodes[BYTES];
 
+	int i;
 	unsigned int levelSize;
 	// Koristi se za funkciju ReadHuffmanCodes
 	int *codes;
 
 	MinHeap *minHeap = NULL;
-	MinHeapNode *huffmanTree = NULL;
+	Position huffmanTree = NULL;
 
 	// Koristi se za heap array, da bi se znala kolika je njegova velicina
 	int size = 0;
-	frequency = (unsigned int *)malloc(BYTES * sizeof(unsigned int));
-	if (frequency == NULL)
-	{
-		printf("ERROR::Failed to allocate memory!");
-		return -1;
-	}
 
 	memset(frequency, 0, BYTES * sizeof(int));
-	
+
 	countLetterFreq(fileName, frequency);
 	size = usedChars(frequency);
 
 	// Heap creation
-	minHeap = createMinHeap(frequency, size);
-
-	// Deallocate memory for frequencies
-	free(frequency);
-	frequency = NULL;
-
-
-	BuildMinHeap(minHeap);
-	PrintArr(minHeap);
+	minHeap = CreateAndBuildHeap(frequency, size);
+	//PrintArr(minHeap);
 
 	huffmanTree = BuildHuffmanTree(minHeap);
 	levelSize = TreeMaxLevel(huffmanTree);
@@ -126,12 +125,23 @@ int main(int numOfArgs, char **args)
 	codes = (int*)malloc(levelSize * sizeof(int));
 	assert(codes != NULL);
 
+	//ReadHuffmanCode(huffmanTree, codes, 0);
 
-	ReadHuffmanCode(huffmanTree, codes, 0);
+	// Allocating memory for string codes that will be used to encode file
+	for (i = 0; i < BYTES; ++i)
+	{
+		stringCodes[i] = (char *)(malloc((levelSize + 1) * sizeof(char)));
+		assert(stringCodes[i] != NULL);
+		memcpy(stringCodes[i], "aa", (levelSize + 1) * sizeof(char));
+	}
+
+	ReadHuffmanCodeIntoArray(huffmanTree, codes, 0, stringCodes);
+	EncodeToFile(fileName, "test.bin", huffmanTree, frequency, stringCodes, levelSize);
+
+	DecodeToFile("test.bin", "test1.txt");
 
 	getchar();
 	getchar();
-
 	return 0;
 }
 
@@ -166,7 +176,7 @@ int usedChars(unsigned int * freqArr)
 	if (freqArr == NULL)
 		exit(-1);
 
-	for (i = 0; i < BYTES; ++i) 
+	for (i = 0; i < BYTES; ++i)
 	{
 		if (freqArr[i] > 0)
 			count++;
@@ -285,7 +295,7 @@ int MinHeapify(MinHeap *heap, int index)
 	if (rightChildIndex > size) return 0;
 
 	if (arr[index].freq < arr[leftChildIndex].freq && arr[index].freq < arr[rightChildIndex].freq) return -1;
-	
+
 	if (arr[leftChildIndex].freq < arr[rightChildIndex].freq)
 	{
 		temp = arr[leftChildIndex];
@@ -320,6 +330,15 @@ int BuildMinHeap(MinHeap *heap)
 	}
 
 	return 0;
+}
+
+MinHeap* CreateAndBuildHeap(unsigned int * freqArr, int size)
+{
+	MinHeap *heap = createMinHeap(freqArr, size);
+	if (heap == NULL) return NULL;
+	BuildMinHeap(heap);
+
+	return heap;
 }
 
 MinHeapNode* GetMin(MinHeap *heap)
@@ -439,7 +458,6 @@ unsigned int TreeMaxLevel(Position node)
 	}
 }
 
-// Returns root node
 Position BuildHuffmanTree(MinHeap *heap)
 {
 	Position result, left, right, rootNode;
@@ -486,7 +504,7 @@ Position BuildHuffmanTree(MinHeap *heap)
 	return rootNode;
 }
 
-int ReadHuffmanCode(Position node, int codes[], int treeLevel)
+int PrintHuffmanCode(Position node, int codes[], int treeLevel)
 {
 	int i;
 	if (node == NULL) return 0;
@@ -494,17 +512,17 @@ int ReadHuffmanCode(Position node, int codes[], int treeLevel)
 	if (node->left != NULL)
 	{
 		codes[treeLevel] = 0;
-		ReadHuffmanCode(node->left, codes, treeLevel + 1);
+		PrintHuffmanCode(node->left, codes, treeLevel + 1);
 	}
 
 	if (node->right != NULL)
 	{
 		codes[treeLevel] = 1;
-		ReadHuffmanCode(node->right, codes, treeLevel + 1);
+		PrintHuffmanCode(node->right, codes, treeLevel + 1);
 	}
 
 	// Dosli smo do slova, jer je ovo list
-	if (node->left == NULL & node->right == NULL)
+	if (node->left == NULL && node->right == NULL)
 	{
 		printf("Slovo: %c\t\tCode: ", node->slovo);
 		for (i = 0; i < treeLevel; ++i)
@@ -515,4 +533,240 @@ int ReadHuffmanCode(Position node, int codes[], int treeLevel)
 	}
 
 	return 0;
+}
+
+int ReadHuffmanCodeIntoArray(Position node, int codes[], int treeLevel, char *codesArr[])
+{
+	int i;
+	if (node == NULL) return -1;
+
+	if (node->left != NULL)
+	{
+		codes[treeLevel] = 0;
+		ReadHuffmanCodeIntoArray(node->left, codes, treeLevel + 1, codesArr);
+	}
+
+	if (node->right != NULL)
+	{
+		codes[treeLevel] = 1;
+		ReadHuffmanCodeIntoArray(node->right, codes, treeLevel + 1, codesArr);
+	}
+
+	// Dosli smo do slova, jer je ovo list
+	if (node->left == NULL && node->right == NULL)
+		for (i = 0; i < treeLevel; ++i)
+			sprintf(&codesArr[node->slovo][i], "%d", codes[i]);
+
+	return 0;
+}
+
+int EncodeToFile(const char *filename, const char *compressedFilename, Position huffmanTree, unsigned int * freq, char *stringCodes[], unsigned int levelSize)
+{
+	int i;
+	// Slovo koje se zapisuje u file
+	char letter;
+	char code = 0;
+	char *buff = NULL;
+	// Koristi se za pracenje da li je stavljeno 8 bita
+	// u 'code' varijablu
+	short int count = 0;
+
+	// Varijabla za pracenje koliko je byteova procitano iz file-a
+	// da bi se na kraju moglo ispisati koliko je ustedeno
+	unsigned int bytesInSource = 0;
+	unsigned int bytesInCompress = 0;
+	float savedSpaceResult = 0.0f;
+
+	// Frekvencija koja se zapisuje u file
+	unsigned int f = 0;
+	FILE *compressedFile = NULL;
+	FILE *fileToRead = NULL;
+
+	buff = (char *)malloc((levelSize + 1) * sizeof(char));
+	if (buff == NULL)
+	{
+		printf("ERROR::EncodeToFile::Could not allocate enough memory!\n");
+		return -1;
+	}
+	compressedFile = fopen(compressedFilename, "wb");
+
+	// Izrada tablice slova i frekvencije.
+	// 1B za slovo i 4B za frekvenciju
+	// Koristi se kada se file bude dekompresirao da se nanovo izgradi Huffmanovo stablo
+	for (i = 0; i < BYTES; ++i)
+	{
+		if (freq[i] == 0) continue;
+
+		letter = i;
+		f = freq[i];
+		fwrite(&letter, sizeof(char), 1, compressedFile);
+		fwrite(&f, sizeof(unsigned int), 1, compressedFile);
+
+		bytesInCompress += 5;
+	}
+
+	// Zapis tablice je gotov. Dodaje se 8B punih jedinica da bi se znalo da pocinju enkodirani znakovi
+	f = UINT_MAX;
+	fwrite(&f, sizeof(unsigned int), 1, compressedFile);
+	fwrite(&f, sizeof(unsigned int), 1, compressedFile);
+
+	bytesInCompress += 8;
+
+	// Otvaranje file-a kojeg se treba kompresirati
+	// Citanje tog file i istovremeni zapis u drugi file
+	// kada se letter napuni sa 8 bita
+
+	fileToRead = fopen(filename, "r");
+	assert(fileToRead != NULL);
+
+	while (!feof(fileToRead))
+	{
+		fscanf(fileToRead, "%c", &letter);
+		// Kopiraj huffman kod iz stringCodes niza u buffer
+		strcpy(buff, stringCodes[(int)letter]);
+		bytesInSource += 1;
+		i = 0;
+		while (buff[i] != '\0')
+		{
+			if (count < 8)
+			{
+				code = code << 1;
+				code |= (int)buff[i] - 48;
+				count++;
+				++i;
+			}
+			else
+			{
+				fwrite(&code, sizeof(char), 1, compressedFile);
+				bytesInCompress += 1;
+				count = 0;
+				code = 0;
+			}
+		}
+	}
+	fwrite(&code, sizeof(char), 1, compressedFile);
+	bytesInCompress += 1;
+
+	fclose(fileToRead);
+	fileToRead = NULL;
+
+	fclose(compressedFile);
+	compressedFile = NULL;
+
+	printf("Bytes in source file: %u\nBytes in compressed file: %u\n", bytesInSource, bytesInCompress);
+	savedSpaceResult = 1.0 - (float)bytesInCompress / bytesInSource;
+	printf("Saved: %f %%\n", savedSpaceResult * 100);
+	return 1;
+}
+
+int DecodeToFile(const char * filename, const char * compressedFilename)
+{
+	FILE *compressedFile = NULL, *uncompressedFile = NULL;
+
+	MinHeap *minHeap = NULL;
+	Position huffmanTree = NULL;
+
+	unsigned int levelSize;
+
+	// Prvo je potrebno izvuci tablicu iz file-a
+	unsigned int frequency[BYTES];
+
+	// Flag koji kada dode do 0 znaci da smo procitali tablicu i prosli 8B jedinica
+	int endOfTable = 8;
+
+	int size = 0;
+	unsigned int i;
+	char letter;
+	int codeCount = 7;
+	char code = 0;
+	int *huffmanCodesTemp = NULL;
+	int *codes = NULL;
+
+	memset(frequency, 0, BYTES * sizeof(int));
+
+	compressedFile = fopen(filename, "rb");
+	if (compressedFile == NULL) return -1;
+
+	while (!feof(compressedFile))
+	{
+		fread(&letter, sizeof(char), 1, compressedFile);
+		i = letter;
+		if (i > 255)
+		{
+			--endOfTable;
+			// Znaci da smo dosli do 8B punih jedinica
+			if (endOfTable == 0)
+				break;
+			continue;
+		}
+		fread(&frequency[i], sizeof(unsigned int), 1, compressedFile);
+	}
+
+	// Sagradi heap i huffmanovo stablo
+	size = usedChars(frequency);
+
+	// Heap creation
+	minHeap = CreateAndBuildHeap(frequency, size);
+
+	//PrintArr(minHeap);
+	huffmanTree = BuildHuffmanTree(minHeap);
+	levelSize = TreeMaxLevel(huffmanTree);
+
+	codes = (int*)malloc(levelSize * sizeof(int));
+	assert(codes != NULL);
+
+	//PrintHuffmanCode(huffmanTree, codes, 0);
+
+	// U ovaj niz cemo dodavati trenutni kod za neki broj
+	huffmanCodesTemp = (int *)malloc((levelSize + 1) * sizeof(int));
+	if (huffmanCodesTemp == NULL) return -1;
+	memset(huffmanCodesTemp, 0, (levelSize + 1) * sizeof(int));
+	// Ucitamo byte i pratimo stablo po byteovima
+	uncompressedFile = fopen(compressedFilename, "wb");
+	fread(&code, sizeof(char), 1, compressedFile);
+	while (!feof(compressedFile))
+	{
+		i = 0;
+		memset(huffmanCodesTemp, 0, (levelSize + 1) * sizeof(int));
+		while ((letter = IsLetter(huffmanTree, huffmanCodesTemp, i)) == -1)
+		{
+			huffmanCodesTemp[i++] = (code & 128) ? 1 : 0;
+			code = code << 1;
+			codeCount--;
+			if (codeCount < 0)
+			{
+				fread(&code, sizeof(char), 1, compressedFile);
+				codeCount = 7;
+			}
+		}
+		fwrite(&letter, sizeof(char), 1, uncompressedFile);
+
+	}
+
+	fclose(uncompressedFile);
+	uncompressedFile = NULL;
+	fclose(compressedFile);
+	compressedFile = NULL;
+
+	return 0;
+}
+
+char IsLetter(Position node, int codes[], int currentLen)
+{
+	Position it = node;
+	int i = 0;
+	while (i <= currentLen)
+	{
+		if (it->left == NULL && it->right == NULL)
+			return it->slovo;
+
+		if (codes[i] == 0)
+			it = it->left;
+
+		else if (codes[i] == 1)
+			it = it->right;
+
+		++i;
+	}
+	return -1;
 }
